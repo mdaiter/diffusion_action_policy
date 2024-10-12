@@ -100,8 +100,7 @@ class DiffusionConditionalResidualBlock1d():
             out = out + cond_embed
 
         out = self.conv2(out)
-        if self.in_channels != self.out_channels:
-            out = out + self.residual_conv(x)
+        out += self.residual_conv(x) if self.in_channels != self.out_channels else x
         return out
 
 class SpatialSoftmax():

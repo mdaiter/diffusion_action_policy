@@ -37,13 +37,13 @@ def create_stats_buffers(
         buffer = {}
         if mode == "mean_std":
             buffer = {
-                "mean": Tensor.ones(shape, dtype=dtypes.float, requires_grad=False).detach() * float('inf'),
-                "std": Tensor.ones(shape, dtype=dtypes.float, requires_grad=False).detach() * float('inf'),
+                "mean": Tensor.ones(shape, dtype=dtypes.float, requires_grad=False) * float('inf'),
+                "std": Tensor.ones(shape, dtype=dtypes.float, requires_grad=False) * float('inf'),
             }
         elif mode == "min_max":
             buffer = {
-                "min": Tensor.ones(shape, dtype=dtypes.float, requires_grad=False).detach() * float('inf'),
-                "max": Tensor.ones(shape, dtype=dtypes.float, requires_grad=False).detach() * float('inf'),
+                "min": Tensor.ones(shape, dtype=dtypes.float, requires_grad=False) * float('inf'),
+                "max": Tensor.ones(shape, dtype=dtypes.float, requires_grad=False) * float('inf'),
             }
 
         if stats is not None:
@@ -120,16 +120,22 @@ class Normalize():
                 std = buffer["std"]
                 assert not (mean == float('inf')).any().numpy(), _no_stats_error_str("mean")
                 assert not (std == float('inf')).any().numpy(), _no_stats_error_str("std")
+                print(f'mean: {mean.numpy()}, std: {std.numpy()}')
+                print(f'batch[{key}] before normalization: {batch[key].numpy()}')
                 batch[key] = (batch[key] - mean) / (std + 1e-8)
+                print(f'batch[{key}] after normalization: {batch[key].numpy()}')
             elif mode == "min_max":
                 min = buffer["min"]
                 max = buffer["max"]
                 assert not (min == float('inf')).any().numpy(), _no_stats_error_str("min")
                 assert not (max == float('inf')).any().numpy(), _no_stats_error_str("max")
                 # normalize to [0,1]
+                print(f'max: {max.numpy()}, min: {min.numpy()}')
+                print(f'batch[{key}] before normalization: {batch[key].numpy()}')
                 batch[key] = (batch[key] - min) / (max - min + 1e-8)
                 # normalize to [-1, 1]
                 batch[key] = batch[key] * 2 - 1
+                print(f'batch[{key}] after normalization: {batch[key].numpy()}')
             else:
                 raise ValueError(mode)
         Tensor.no_grad = False

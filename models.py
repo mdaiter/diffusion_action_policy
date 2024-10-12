@@ -6,6 +6,7 @@ from tinygrad.nn.optim import Adam
 from tinygrad import dtypes
 import math
 import einops
+import numpy as np
 
 from networks import DiffusionSinusoidalPosEmb, DiffusionConv1dBlock, DiffusionConditionalResidualBlock1d, SpatialSoftmax
 from config import DiffusionConfig
@@ -159,7 +160,7 @@ class DiffusionConditionalUnet1d():
         timesteps_embed = timestep.sequential(self.diffusion_step_encoder)
 
         # If there is a global conditioning feature, concatenate it to the timestep embedding.
-        global_feature = Tensor.cat(*[timesteps_embed, global_cond], dim=-1) if global_cond is not None else timesteps_embed
+        global_feature = timesteps_embed.cat(global_cond, dim=-1) if global_cond is not None else timesteps_embed
         
         # Run encoder, keeping track of skip features to pass to the decoder.
         encoder_skip_features: list[Tensor] = []
@@ -196,159 +197,125 @@ BatchNorm = nn.BatchNorm2d
 Conv2d = nn.Conv2d
 Linear = nn.Linear
 
+class ResNet18Backbone():
+    def __init__(self, use_group_norm=False):
+        self.conv1 = Conv2d(3, 64, kernel_size=7, stride=2, bias=False, padding=3)
+        self.bn1 = nn.GroupNorm(num_groups=4, num_channels=64) if use_group_norm else BatchNorm(64)
 
-class BasicBlock:
-  expansion = 1
+        self.layer1_0 = [
+            # 0
+            Conv2d(64, 64, kernel_size=3, stride=1, bias=False, padding=1),
+            nn.GroupNorm(num_groups=4, num_channels=64) if use_group_norm else BatchNorm(64),
+            Tensor.relu,
+            Conv2d(64, 64, kernel_size=3, stride=1, bias=False, padding=1),
+            nn.GroupNorm(num_groups=4, num_channels=64) if use_group_norm else BatchNorm(64),
+        ]
+        self.layer1_1 = [
+            # 1
+            Conv2d(64, 64, kernel_size=3, stride=1, bias=False, padding=1),
+            nn.GroupNorm(num_groups=4, num_channels=64) if use_group_norm else BatchNorm(64),
+            Tensor.relu,
+            Conv2d(64, 64, kernel_size=3, stride=1, bias=False, padding=1),
+            nn.GroupNorm(num_groups=4, num_channels=64) if use_group_norm else BatchNorm(64),
+        ]
+        self.layer2_0 = [
+            # 0
+            Conv2d(64, 128, kernel_size=3, stride=2, bias=False, padding=1),
+            nn.GroupNorm(num_groups=8, num_channels=128) if use_group_norm else BatchNorm(128),
+            Tensor.relu,
+            Conv2d(128, 128, kernel_size=3, stride=1, bias=False, padding=1),
+            nn.GroupNorm(num_groups=8, num_channels=128) if use_group_norm else BatchNorm(128)
+        ]
+        self.layer2_d = [
+            # 0 downsample
+            Conv2d(64, 128, kernel_size=1, stride=2, bias=False),
+            nn.GroupNorm(num_groups=8, num_channels=128) if use_group_norm else BatchNorm(128)
+        ]
+        self.layer2_1 = [
+            # 1
+            Conv2d(128, 128, kernel_size=3, stride=1, bias=False, padding=1),
+            nn.GroupNorm(num_groups=8, num_channels=128) if use_group_norm else BatchNorm(64),
+            Tensor.relu,
+            Conv2d(128, 128, kernel_size=3, stride=1, bias=False, padding=1),
+            nn.GroupNorm(num_groups=8, num_channels=128) if use_group_norm else BatchNorm(128),
+        ]
+        self.layer3_0 = [
+            # 0
+            Conv2d(128, 256, kernel_size=3, stride=2, bias=False, padding=1),
+            nn.GroupNorm(num_groups=16, num_channels=256) if use_group_norm else BatchNorm(256),
+            Tensor.relu,
+            Conv2d(256, 256, kernel_size=3, stride=1, bias=False, padding=1),
+            nn.GroupNorm(num_groups=16, num_channels=256) if use_group_norm else BatchNorm(256)
+        ]
+        self.layer3_d = [
+            # 0 downsample
+            Conv2d(128, 256, kernel_size=1, stride=2, bias=False),
+            nn.GroupNorm(num_groups=16, num_channels=256) if use_group_norm else BatchNorm(256)
+        ]
+        self.layer3_1 = [
+            # 1
+            Conv2d(256, 256, kernel_size=3, stride=1, bias=False, padding=1),
+            nn.GroupNorm(num_groups=16, num_channels=256) if use_group_norm else BatchNorm(256),
+            Tensor.relu,
+            Conv2d(256, 256, kernel_size=3, stride=1, bias=False, padding=1),
+            nn.GroupNorm(num_groups=16, num_channels=256) if use_group_norm else BatchNorm(256),
+        ]
+        self.layer4_0 = [
+            # 0
+            Conv2d(256, 512, kernel_size=3, stride=2, bias=False, padding=1),
+            nn.GroupNorm(num_groups=32, num_channels=512) if use_group_norm else BatchNorm(512),
+            Tensor.relu,
+            Conv2d(512, 512, kernel_size=3, stride=1, bias=False, padding=1),
+            nn.GroupNorm(num_groups=32, num_channels=512) if use_group_norm else BatchNorm(512)
+        ]
+        self.layer4_d = [
+            # 0 downsample
+            Conv2d(256, 512, kernel_size=1, stride=2, bias=False),
+            nn.GroupNorm(num_groups=32, num_channels=512) if use_group_norm else BatchNorm(512)
+        ]
+        self.layer4_1 = [
+            # 1
+            Conv2d(512, 512, kernel_size=3, stride=1, bias=False, padding=1),
+            nn.GroupNorm(num_groups=32, num_channels=512) if use_group_norm else BatchNorm(512),
+            Tensor.relu,
+            Conv2d(512, 512, kernel_size=3, stride=1, bias=False, padding=1),
+            nn.GroupNorm(num_groups=32, num_channels=512) if use_group_norm else BatchNorm(512),
+        ]
 
-  def __init__(self, in_planes, planes, stride=1, groups=1, base_width=64, use_group_norm=False):
-    assert groups == 1 and base_width == 64, "BasicBlock only supports groups=1 and base_width=64"
-    self.conv1 = Conv2d(in_planes, planes, kernel_size=3, stride=stride, padding=1, bias=False)
-    self.bn1 = nn.GroupNorm(num_groups=planes // 16, num_channels=planes) if use_group_norm else BatchNorm(planes)
-    self.conv2 = Conv2d(planes, planes, kernel_size=3, padding=1, stride=1, bias=False)
-    self.bn2 = nn.GroupNorm(num_groups=planes // 16, num_channels=planes) if use_group_norm else BatchNorm(planes)
-    self.downsample = []
-    if stride != 1 or in_planes != self.expansion*planes:
-      self.downsample = [
-        Conv2d(in_planes, self.expansion*planes, kernel_size=1, stride=stride, bias=False),
-        nn.GroupNorm(num_groups=self.expansion*planes // 16, num_channels=self.expansion*planes) if use_group_norm else BatchNorm(self.expansion*planes)
-      ]
-
-  def __call__(self, x):
-    out = self.bn1(self.conv1(x)).relu()
-    out = self.bn2(self.conv2(out))
-    out = out + x.sequential(self.downsample)
-    out = out.relu()
-    return out
-
-
-class Bottleneck:
-  # NOTE: stride_in_1x1=False, this is the v1.5 variant
-  expansion = 4
-
-  def __init__(self, in_planes, planes, stride=1, stride_in_1x1=False, groups=1, base_width=64, use_group_norm=False):
-    width = int(planes * (base_width / 64.0)) * groups
-    # NOTE: the original implementation places stride at the first convolution (self.conv1), control with stride_in_1x1
-    self.conv1 = Conv2d(in_planes, width, kernel_size=1, stride=stride if stride_in_1x1 else 1, bias=False)
-    self.bn1 = nn.GroupNorm(num_groups=width // 16, num_channels=width) if use_group_norm else BatchNorm(width)
-    self.conv2 = Conv2d(width, width, kernel_size=3, padding=1, stride=1 if stride_in_1x1 else stride, groups=groups, bias=False)
-    self.bn2 = nn.GroupNorm(num_groups=width // 16, num_channels=width) if use_group_norm else BatchNorm(width)
-    self.conv3 = Conv2d(width, self.expansion*planes, kernel_size=1, bias=False)
-    self.bn3 = nn.GroupNorm(num_groups=self.expansion*planes // 16, num_channels=self.expansion*planes) if use_group_norm else BatchNorm(self.expansion*planes)
-    self.downsample = []
-    if stride != 1 or in_planes != self.expansion*planes:
-      self.downsample = [
-        Conv2d(in_planes, self.expansion*planes, kernel_size=1, stride=stride, bias=False),
-        nn.GroupNorm(num_groups=self.expansion*planes // 16, num_channels=self.expansion*planes) if use_group_norm else BatchNorm(self.expansion*planes)
-      ]
-
-  def __call__(self, x):
-    out = self.bn1(self.conv1(x)).relu()
-    out = self.bn2(self.conv2(out)).relu()
-    out = self.bn3(self.conv3(out))
-    out = out + x.sequential(self.downsample)
-    out = out.relu()
-    return out
-
-class ResNet:
-  def __init__(self, num, num_classes=None, groups=1, width_per_group=64, stride_in_1x1=False, use_group_norm=False):
-    self.num = num
-    self.block = {
-      18: BasicBlock,
-      34: BasicBlock,
-      50: Bottleneck,
-      101: Bottleneck,
-      152: Bottleneck
-    }[num]
-
-    self.num_blocks = {
-      18: [2,2,2,2],
-      34: [3,4,6,3],
-      50: [3,4,6,3],
-      101: [3,4,23,3],
-      152: [3,8,36,3]
-    }[num]
-
-    self.in_planes = 64
-
-    self.groups = groups
-    self.base_width = width_per_group
-    self.conv1 = Conv2d(3, 64, kernel_size=7, stride=2, bias=False, padding=3)
-    self.bn1 = nn.GroupNorm(num_groups=64 // 16, num_channels=64) if use_group_norm else BatchNorm(64)
-    self.layer1 = self._make_layer(self.block, 64, self.num_blocks[0], stride=1, stride_in_1x1=stride_in_1x1, use_group_norm=use_group_norm)
-    self.layer2 = self._make_layer(self.block, 128, self.num_blocks[1], stride=2, stride_in_1x1=stride_in_1x1, use_group_norm=use_group_norm)
-    self.layer3 = self._make_layer(self.block, 256, self.num_blocks[2], stride=2, stride_in_1x1=stride_in_1x1, use_group_norm=use_group_norm)
-    self.layer4 = self._make_layer(self.block, 512, self.num_blocks[3], stride=2, stride_in_1x1=stride_in_1x1, use_group_norm=use_group_norm)
-    self.fc = Linear(in_features = int(512 * self.block.expansion), out_features = num_classes) if num_classes is not None and use_group_norm is False else None
-
-  def _make_layer(self, block, planes, num_blocks, stride, stride_in_1x1, use_group_norm):
-    strides = [stride] + [1] * (num_blocks-1)
-    layers = []
-    for stride in strides:
-      if block == Bottleneck:
-        layers.append(block(self.in_planes, planes, stride, stride_in_1x1, self.groups, self.base_width, use_group_norm=use_group_norm))
-      else:
-        layers.append(block(self.in_planes, planes, stride, self.groups, self.base_width, use_group_norm=use_group_norm))
-      self.in_planes = planes * block.expansion
-    return layers
-
-  def backbone(self, x:Tensor) -> Tensor:
-    out = self.bn1(self.conv1(x)).relu()
-    out = out.pad2d([1,1,1,1]).max_pool2d((3,3), 2)
-    out = out.sequential(self.layer1)
-    out = out.sequential(self.layer2)
-    out = out.sequential(self.layer3)
-    out = out.sequential(self.layer4)
-    return out
     
-  def __call__(self, x:Tensor) -> Tensor:
-    is_feature_only = self.fc is None
-    if is_feature_only: features = []
-    out = self.bn1(self.conv1(x)).relu()
-    out = out.pad2d([1,1,1,1]).max_pool2d((3,3), 2)
-    out = out.sequential(self.layer1)
-    if is_feature_only: features.append(out)
-    out = out.sequential(self.layer2)
-    if is_feature_only: features.append(out)
-    out = out.sequential(self.layer3)
-    if is_feature_only: features.append(out)
-    out = out.sequential(self.layer4)
-    if is_feature_only: features.append(out)
-    if not is_feature_only:
-      out = out.mean([2,3])
-      out = self.fc(out.cast(dtypes.float32))
-      return out
-    return features
+    def __call__(self, x:Tensor) -> Tensor:
+        out = self.bn1(self.conv1(x)).relu()
+        out = out.max_pool2d(kernel_size=(3,3), stride=2, padding=1, dilation=1)
+        out = out.sequential(self.layer1_0)
+        out = out.sequential(self.layer1_1)
+        out = out.sequential(self.layer2_0) + out.sequential(self.layer2_d)
+        out = out.sequential(self.layer2_1)
+        out = out.sequential(self.layer3_0) + out.sequential(self.layer3_d)
+        out = out.sequential(self.layer3_1)
+        out = out.sequential(self.layer4_0) + out.sequential(self.layer4_d)
+        out = out.sequential(self.layer4_1)
+        return out
+   
+def center_crop_f(output_size: tuple, img: Tensor) -> Tensor:
+        h, w = img.shape[-2:]
+        th, tw = output_size
+    
+        i = int(round((h - th) / 2.))
+        j = int(round((w - tw) / 2.))
+    
+        return img[..., i:i+th, j:j+tw]
 
-  def load_from_pretrained(self):
-    model_urls = {
-      (18, 1, 64): 'https://download.pytorch.org/models/resnet18-5c106cde.pth',
-      (34, 1, 64): 'https://download.pytorch.org/models/resnet34-333f7ec4.pth',
-      (50, 1, 64): 'https://download.pytorch.org/models/resnet50-19c8e357.pth',
-      (50, 32, 4): 'https://download.pytorch.org/models/resnext50_32x4d-7cdf4587.pth',
-      (101, 1, 64): 'https://download.pytorch.org/models/resnet101-5d3b4d8f.pth',
-      (152, 1, 64): 'https://download.pytorch.org/model|s/resnet152-b121ed2d.pth',
-    }
-
-    self.url = model_urls[(self.num, self.groups, self.base_width)]
-    for k, dat in torch_load(fetch(self.url)).items():
-      obj: Tensor = get_child(self, k)
-
-      if 'fc.' in k and obj.shape != dat.shape:
-        print("skipping fully connected layer")
-        continue # Skip FC if transfer learning
-
-      if 'bn' not in k and 'downsample' not in k: assert obj.shape == dat.shape, (k, obj.shape, dat.shape)
-      obj.assign(dat.to(obj.device).reshape(obj.shape))
-
-def generate_resnet_model(resnet_model, use_group_norm=False):
-    return {
-        'resnet18' : ResNet(18, num_classes=1000, use_group_norm=use_group_norm),
-        'resnet34' : ResNet(34, num_classes=1000, use_group_norm=use_group_norm),
-        'resnet50' : ResNet(50, num_classes=1000, use_group_norm=use_group_norm),
-        'resnet101' : ResNet(101, num_classes=1000, use_group_norm=use_group_norm),
-        'resnet152' : ResNet(152, num_classes=1000, use_group_norm=use_group_norm),
-        'resnext50_32x4d' : ResNet(50, num_classes=1000, groups=32, width_per_group=4, use_group_norm=use_group_norm),
-    }[resnet_model]
+def random_crop_f(size:tuple, img: Tensor) -> Tensor:
+    h, w = img.shape[-2:]
+    th, tw = size
+    
+    if h < th or w < tw:
+        raise ValueError("Requested crop size is larger than the image size")
+    
+    i = np.random.randint(0, h - th + 1)
+    j = np.random.randint(0, w - tw + 1)
+    
+    return img[..., i:i+th, j:j+tw]
 
 class DiffusionRgbEncoder():
     """Encoder an RGB image into a 1D feature vector.
@@ -361,18 +328,19 @@ class DiffusionRgbEncoder():
         if config.crop_shape is not None:
             self.do_crop = True
             # Always use center crop for eval
-            #self.center_crop = torchvision.transforms.CenterCrop(config.crop_shape)
-            #if config.crop_is_random:
-            #    self.maybe_random_crop = torchvision.transforms.RandomCrop(config.crop_shape)
-            #else:
-            #    self.maybe_random_crop = self.center_crop
+            self.center_crop = lambda x: center_crop_f(config.crop_shape, x)
+            if config.crop_is_random:
+                self.maybe_random_crop = lambda x: random_crop_f(config.crop_shape, x)
+            else:
+                self.maybe_random_crop = self.center_crop
         else:
             self.do_crop = False
 
         # Set up backbone.
         # Note: This assumes that the layer4 feature map is children()[-3]
         # TODO(alexander-soare): Use a safer alternative.
-        self.backbone = generate_resnet_model(config.vision_backbone, use_group_norm=config.use_group_norm)
+        self.backbone = ResNet18Backbone(use_group_norm=config.use_group_norm) 
+        #self.backbone = generate_resnet_model(config.vision_backbone, use_group_norm=config.use_group_norm)
         if config.use_group_norm and config.pretrained_backbone_weights:
             raise ValueError(
                 "You can't replace BatchNorm in a pretrained model without ruining the weights!"
@@ -389,10 +357,10 @@ class DiffusionRgbEncoder():
         dummy_input_h_w = (
             config.crop_shape if config.crop_shape is not None else config.input_shapes[image_key][1:]
         )
-        dummy_input = Tensor.zeros(1, config.input_shapes[image_key][0], *dummy_input_h_w)
+        dummy_input = Tensor.zeros(1, config.input_shapes[image_key][0], *dummy_input_h_w, requires_grad=False)
         #prev_tensor_no_grad = Tensor.no_grad
         Tensor.no_grad = True
-        dummy_feature_map = self.backbone.backbone(dummy_input)
+        dummy_feature_map = self.backbone(dummy_input)
         print(f'dummy_feature_map: {dummy_feature_map}')
         Tensor.no_grad = False
         feature_map_shape = tuple(dummy_feature_map.shape[1:])
@@ -408,14 +376,14 @@ class DiffusionRgbEncoder():
             (B, D) image feature.
         """
         # Preprocess: maybe crop (if it was set up in the __init__).
-        if False:# self.do_crop:
-            if self.training:  # noqa: SIM108
+        if self.do_crop:
+            if True:#self.training:  # noqa: SIM108
                 x = self.maybe_random_crop(x)
             else:
                 # Always use center crop for eval.
                 x = self.center_crop(x)
         # Extract backbone feature.
-        x = self.pool(self.backbone.backbone(x)).flatten(start_dim=1)
+        x = self.pool(self.backbone(x)).flatten(start_dim=1)
         # Final linear layer with non-linearity.
         x = self.out(x).relu()
         return x

@@ -1,6 +1,7 @@
 import math
 from collections import deque
 from typing import Callable
+import copy
 
 import tinygrad
 from tinygrad import Tensor
@@ -102,8 +103,8 @@ class DiffusionPolicy():
         """
         batch = self.normalize_inputs(batch)
         if len(self.expected_image_keys) > 0:
-            batch = dict(batch)  # shallow copy so that adding a key doesn't modify the original
-            batch["observation.images"] = Tensor.stack(*([batch[k] for k in self.expected_image_keys]), dim=-4)
+            batch = copy.copy(dict(batch))  # shallow copy so that adding a key doesn't modify the original
+            batch["observation.images"] = Tensor.stack(*[batch[k] for k in self.expected_image_keys], dim=-4)
         # Note: It's important that this happens after stacking the images into a single key.
         self._queues = populate_queues(self._queues, batch)
 
@@ -125,8 +126,9 @@ class DiffusionPolicy():
         """Run the batch through the model and compute the loss for training or validation."""
         batch = self.normalize_inputs(batch)
         if len(self.expected_image_keys) > 0:
-            batch = dict(batch)  # shallow copy so that adding a key doesn't modify the original
-            batch["observation.images"] = Tensor.stack(*([batch[k] for k in self.expected_image_keys]), dim=-4)
+            print(f'Called policy with self.expected_image_keys len: {len(self.expected_image_keys)}')
+            batch = copy.copy(dict(batch))  # shallow copy so that adding a key doesn't modify the original
+            batch["observation.images"] = Tensor.stack(*[batch[k] for k in self.expected_image_keys], dim=-4)
         batch = self.normalize_targets(batch)
         loss = self.diffusion.compute_loss(batch)
         return {"loss": loss}

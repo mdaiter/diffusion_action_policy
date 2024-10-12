@@ -3,7 +3,7 @@ from diffusers.schedulers.scheduling_ddpm import DDPMScheduler
 
 # with this, to use diffusers the library, we sadly *really* need to import torch for now.
 # wip, trying to get this out
-from torch import tensor, from_numpy
+from torch import from_numpy
 from tinygrad import Tensor, dtypes
 import tinygrad
 
@@ -69,6 +69,9 @@ class DiffusionModel():
             batch_size, self.config.horizon, self.config.output_shapes["action"][0],
             dtype=dtypes.float
         )
+        print(f'sample: {sample}')
+        print(f'sample shape: {sample.shape}')
+        print(f'self.num_inference_steps: {self.num_inference_steps}')
 
         self.noise_scheduler.set_timesteps(self.num_inference_steps)
 
@@ -86,11 +89,13 @@ class DiffusionModel():
             print(f'sample: {sample}')
             model_output = self.unet(
                 sample,
-                Tensor.full(shape=sample.shape[:1][0], fill_value=t.numpy()).cast(dtypes.long),
+                Tensor.full(shape=sample.shape[:1], fill_value=t.numpy(), dtype=dtypes.long),
                 global_cond=global_cond,
             )
             # Compute previous image: x_t -> x_t-1
-            sample = self.noise_scheduler.step(tensor(model_output.numpy()), t, tensor(sample.numpy())).prev_sample
+            sample = self.noise_scheduler.step(
+                from_numpy(model_output.numpy()), t, from_numpy(sample.numpy())
+            ).prev_sample
 
         sample = Tensor(sample.numpy(), dtype=dtypes.float)
         return sample
@@ -98,13 +103,14 @@ class DiffusionModel():
     def _prepare_global_conditioning(self, batch: dict[str, Tensor]) -> Tensor:
         """Encode image features and concatenate them all together along with the state vector."""
         batch_size, n_obs_steps = batch["observation.state"].shape[:2]
-        global_cond_feats = [batch["observation.state"].cast(dtype=dtypes.float)]
+        global_cond_feats = [batch["observation.state"]]
         # Extract image feature (first combine batch, sequence, and camera index dims).
         if self._use_images:
-            img_features = einops.rearrange(batch["observation.images"], "b s n ... -> (b s n) ...").cast(dtype=dtypes.float)
+            img_features = einops.rearrange(batch["observation.images"], "b s n ... -> (b s n) ...")
+            img_features.requires_grad = False
             img_features = self.rgb_encoder(
                 img_features
-            ).cast(dtype=dtypes.float)
+            )
             # Separate batch dim and sequence dim back out. The camera index dim gets absorbed into the
             # feature dim (effectively concatenating the camera features).
             img_features = einops.rearrange(
@@ -116,7 +122,7 @@ class DiffusionModel():
             global_cond_feats.append(batch["observation.environment_state"].cast(dtype=dtypes.float))
 
         # Concatenate features then flatten to (B, global_cond_dim).
-        return Tensor.cat(*(global_cond_feats), dim=-1).cast(dtype=dtypes.float).flatten(start_dim=1).cast(dtype=dtypes.float)
+        return Tensor.cat(*(global_cond_feats), dim=-1).flatten(start_dim=1)
 
     def generate_actions(self, batch: dict[str, Tensor]) -> Tensor:
         """
@@ -173,13 +179,17 @@ class DiffusionModel():
         # Forward diffusion.
         trajectory = batch["action"]
         # Sample noise to add to the trajectory.
+        Tensor.manual_seed(42)
         eps = Tensor.randn(trajectory.shape, dtype=dtypes.float)
         # Sample a random noising timestep for each item in the batch.
+        print(f'trajectory.shape[0]: {trajectory.shape[0]}')
         timesteps = Tensor.randint(
             (trajectory.shape[0],),
             low=0,
-            high=self.noise_scheduler.config.num_train_timesteps
-        ).cast(dtypes.long)
+            high=self.noise_scheduler.config.num_train_timesteps,
+            dtype=dtypes.long
+        )
+        print(f'timesteps: {timesteps.numpy()}')
         # Add noise to the clean trajectories according to the noise magnitude at each timestep.
         # gotta convert to torch here. noise_scheduler needs it
         noisy_trajectory = self.noise_scheduler.add_noise(
@@ -188,8 +198,11 @@ class DiffusionModel():
 
         # convert back to tinygrad
         noisy_trajectory = Tensor(noisy_trajectory.numpy(), dtype=dtypes.float)
+        print(f'noisy_trajectory: {noisy_trajectory.numpy()}')
         # Run the denoising network (that might denoise the trajectory, or attempt to predict the noise).
         pred = self.unet(noisy_trajectory, timesteps, global_cond=global_cond)
+        print(f'pred: {pred.numpy()}')
+        print(f'eps: {eps.numpy()}')
 
         # Compute the loss.
         # The target is either the original trajectory, or the noise.
@@ -201,7 +214,7 @@ class DiffusionModel():
             raise ValueError(f"Unsupported prediction type {self.config.prediction_type}")
 
         # MSE loss, without the mean. Reduction = none
-        loss = (target - pred).pow(2)
+        loss = (target - pred).square()
 
         # Mask loss wherever the action is padded with copies (edges of the dataset trajectory).
         if self.config.do_mask_loss_for_padding:

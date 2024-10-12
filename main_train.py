@@ -49,9 +49,9 @@ opt = nn.optim.Adam(nn.state.get_parameters(policy), lr=1e-4)
 def train_step(batch:dict[str, Tensor]) -> Tensor:
     output_dict = policy(batch)
     loss = output_dict["loss"]
+    opt.zero_grad()
     loss.backward()
     opt.step()
-    opt.zero_grad()
     return loss
 
 if __name__ == "__main__":
@@ -63,7 +63,7 @@ if __name__ == "__main__":
         num_workers=0,
         batch_size=64,
         shuffle=True,
-        pin_memory=True,
+        pin_memory=False,
         drop_last=True,
     )
 
@@ -72,9 +72,8 @@ if __name__ == "__main__":
     with Tensor.train():
         while not done:
             for batch in dataloader:
-                batch = {k: Tensor(v.numpy(), requires_grad=False) for k, v in batch.items()}
-            
-                loss = train_step(batch)
+                batch_mod = {k: Tensor(v.numpy(), requires_grad=False) for k, v in batch.items()}
+                loss = train_step(batch_mod)
             
                 if step % log_freq == 0:
                     print(f"step: {step} loss: {loss.numpy():.3f}")
