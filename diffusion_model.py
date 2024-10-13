@@ -182,7 +182,7 @@ class DiffusionModel():
         # Forward diffusion.
         trajectory = batch["action"]
         # Sample noise to add to the trajectory.
-        eps = Tensor.randn(trajectory.shape, dtype=dtypes.float)
+        eps = Tensor.randn(trajectory.shape, dtype=dtypes.float).realize()
         # Sample a random noising timestep for each item in the batch.
         print(f'trajectory.shape[0]: {trajectory.shape[0]}')
         timesteps = Tensor.randint(

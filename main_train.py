@@ -19,7 +19,7 @@ output_directory.mkdir(parents=True, exist_ok=True)
 
 # Number of offline training steps (we'll only do offline training for this example.)
 # Adjust as you prefer. 5000 steps are needed to get something worth evaluating.
-training_steps = 5500
+training_steps = 5000
 log_freq = 1
 
 # Set up the dataset.
@@ -44,7 +44,7 @@ policy = DiffusionPolicy(cfg, dataset_stats=dataset.stats)
 
 opt = nn.optim.Adam(nn.state.get_parameters(policy), lr=1e-4)
 
-@TinyJit
+#@TinyJit
 @Tensor.train()
 def train_step(batch_outputs:(Tensor, Tensor, Tensor, Tensor)) -> Tensor:
     Tensor.training = True

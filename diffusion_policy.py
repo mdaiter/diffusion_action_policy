@@ -127,10 +127,14 @@ class DiffusionPolicy():
         batch = self.normalize_inputs(batch)
         if len(self.expected_image_keys) > 0:
             print(f'Called policy with self.expected_image_keys len: {len(self.expected_image_keys)}')
-            batch = copy.copy(dict(batch))  # shallow copy so that adding a key doesn't modify the original
-            batch["observation.images"] = Tensor.stack(*[batch[k] for k in self.expected_image_keys], dim=-4)
-        batch = self.normalize_targets(batch)
-        return self.diffusion.compute_loss_pre(batch)
+            batch_copy = copy.deepcopy(dict(batch))  # shallow copy so that adding a key doesn't modify the original
+            batch_copy["observation.images"] = Tensor.stack(*[batch_copy[k] for k in self.expected_image_keys], dim=-4)
+            batch_copy = self.normalize_targets(batch_copy)
+            return self.diffusion.compute_loss_pre(batch_copy)
+        else:
+            batch = self.normalize_targets(batch)
+            return self.diffusion.compute_loss_pre(batch)
+
         
 
     def __call__(self, batch: (Tensor, Tensor, Tensor, Tensor)) -> dict[str, Tensor]:

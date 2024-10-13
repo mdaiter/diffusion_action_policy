@@ -22,7 +22,7 @@ pretrained_policy_path = Path(snapshot_download("lerobot/diffusion_pusht"))
 # pretrained_policy_path = Path("outputs/train/example_pusht_diffusion")
 
 # load the dict of safe_tensors
-state_dict = safe_load("/Users/msd/Desktop/model2.safetensors")
+state_dict = safe_load("/Users/msd/Desktop/model.safetensors")
 policy = DiffusionPolicy(DiffusionConfig())
 load_state_dict(policy, state_dict)
 
@@ -32,7 +32,7 @@ load_state_dict(policy, state_dict)
 env = gym.make(
     "gym_pusht/PushT-v0",
     obs_type="pixels_agent_pos",
-    max_episode_steps=300,
+    max_episode_steps=500,
 )
 
 # Reset the policy and environmens to prepare for rollout

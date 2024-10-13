@@ -296,25 +296,34 @@ class ResNet18Backbone():
         return out
    
 def center_crop_f(output_size: tuple, img: Tensor) -> Tensor:
-        h, w = img.shape[-2:]
-        th, tw = output_size
-    
-        i = int(round((h - th) / 2.))
-        j = int(round((w - tw) / 2.))
-    
-        return img[..., i:i+th, j:j+tw]
+    BS, C, H, W = img.shape
+    crop_h, crop_w = output_size
+
+    # Calculate starting points for cropping
+    start_y = (H - crop_h) // 2
+    start_x = (W - crop_w) // 2
+
+    # Create boolean mask for center crop
+    mask = Tensor.zeros((BS, C, H, W), dtype=img.dtype).contiguous()
+    mask[:, :, start_y:start_y+crop_h, start_x:start_x+crop_w] = 1
+
+    # Apply mask and reshape
+    X_cropped = Tensor(img.numpy()[mask.numpy() == 1])
+    return X_cropped.reshape((BS, C, crop_h, crop_w))
+
+def make_square_mask(shape, mask_size) -> Tensor:
+    BS, _, H, W = shape
+    low_x = Tensor.randint(BS, low=0, high=W-mask_size).reshape(BS,1,1,1)
+    low_y = Tensor.randint(BS, low=0, high=H-mask_size).reshape(BS,1,1,1)
+    idx_x = Tensor.arange(W, dtype=dtypes.int32).reshape((1,1,1,W))
+    idx_y = Tensor.arange(H, dtype=dtypes.int32).reshape((1,1,H,1))
+    return (idx_x >= low_x) * (idx_x < (low_x + mask_size)) * (idx_y >= low_y) * (idx_y < (low_y + mask_size))
 
 def random_crop_f(size:tuple, img: Tensor) -> Tensor:
-    h, w = img.shape[-2:]
-    th, tw = size
-    
-    if h < th or w < tw:
-        raise ValueError("Requested crop size is larger than the image size")
-    
-    i = np.random.randint(0, h - th + 1)
-    j = np.random.randint(0, w - tw + 1)
-    
-    return img[..., i:i+th, j:j+tw]
+    mask = make_square_mask(img.shape, size[0])
+    mask = mask.expand((-1,3,-1,-1))
+    X_cropped = Tensor(img.numpy()[mask.numpy()])
+    return X_cropped.reshape((-1, 3, size[0], size[0]))
 
 class DiffusionRgbEncoder():
     """Encoder an RGB image into a 1D feature vector.
