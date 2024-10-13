@@ -4,13 +4,16 @@ from diffusers.schedulers.scheduling_ddpm import DDPMScheduler
 # with this, to use diffusers the library, we sadly *really* need to import torch for now.
 # wip, trying to get this out
 from torch import from_numpy
-from tinygrad import Tensor, dtypes
+from tinygrad import Tensor, dtypes, TinyJit
 import tinygrad
 
 import einops
 
 from config import DiffusionConfig
 from models import DiffusionRgbEncoder, DiffusionConditionalUnet1d
+
+import numpy as np
+
 
 def _make_noise_scheduler(name: str, **kwargs: dict) -> DDPMScheduler | DDIMScheduler:
     """
@@ -151,7 +154,7 @@ class DiffusionModel():
 
         return actions
 
-    def compute_loss(self, batch: dict[str, Tensor]) -> Tensor:
+    def compute_loss_pre(self, batch: dict[str, Tensor]) -> (Tensor, Tensor, Tensor, Tensor):
         """
         This function expects `batch` to have (at least):
         {
@@ -179,7 +182,6 @@ class DiffusionModel():
         # Forward diffusion.
         trajectory = batch["action"]
         # Sample noise to add to the trajectory.
-        Tensor.manual_seed(42)
         eps = Tensor.randn(trajectory.shape, dtype=dtypes.float)
         # Sample a random noising timestep for each item in the batch.
         print(f'trajectory.shape[0]: {trajectory.shape[0]}')
@@ -193,19 +195,14 @@ class DiffusionModel():
         # Add noise to the clean trajectories according to the noise magnitude at each timestep.
         # gotta convert to torch here. noise_scheduler needs it
         noisy_trajectory = self.noise_scheduler.add_noise(
-            from_numpy(trajectory.numpy()), from_numpy(eps.numpy()), from_numpy(timesteps.numpy())
-        )
+            from_numpy(trajectory.realize().numpy()), from_numpy(eps.realize().numpy()), from_numpy(timesteps.realize().numpy())
+        ).numpy()
+
+        print(f'noisy_trajectory: {noisy_trajectory.shape}')
 
         # convert back to tinygrad
-        noisy_trajectory = Tensor(noisy_trajectory.numpy(), dtype=dtypes.float)
-        print(f'noisy_trajectory: {noisy_trajectory.numpy()}')
-        # Run the denoising network (that might denoise the trajectory, or attempt to predict the noise).
-        pred = self.unet(noisy_trajectory, timesteps, global_cond=global_cond)
-        print(f'pred: {pred.numpy()}')
-        print(f'eps: {eps.numpy()}')
-
-        # Compute the loss.
-        # The target is either the original trajectory, or the noise.
+        noisy_trajectory = Tensor(noisy_trajectory, dtype=dtypes.float)
+        
         if self.config.prediction_type == "epsilon":
             target = eps
         elif self.config.prediction_type == "sample":
@@ -213,6 +210,22 @@ class DiffusionModel():
         else:
             raise ValueError(f"Unsupported prediction type {self.config.prediction_type}")
 
+
+        
+        return (noisy_trajectory, timesteps, global_cond, target)
+
+    def compute_loss(self, noisy_trajectory:Tensor, timesteps:Tensor, global_cond:Tensor, target:Tensor) -> Tensor:
+        # Run the denoising network (that might denoise the trajectory, or attempt to predict the noise).
+        pred = self.unet(noisy_trajectory, timesteps, global_cond=global_cond)
+
+        #pred_cpu = pred.numpy()
+        #blue_channel_zero = np.zeros(pred_cpu.shape[:2]).reshape(pred_cpu.shape[0], pred_cpu.shape[1], 1)
+        #pred_cpu = np.concatenate((pred_cpu, blue_channel_zero), axis=-1)
+        #plt.imshow(pred_cpu, interpolation='nearest')
+        #plt.show()
+
+        # Compute the loss.
+        # The target is either the original trajectory, or the noise.
         # MSE loss, without the mean. Reduction = none
         loss = (target - pred).square()
 
@@ -227,3 +240,5 @@ class DiffusionModel():
             loss = loss * in_episode_bound.unsqueeze(-1)
 
         return loss.mean()
+
+

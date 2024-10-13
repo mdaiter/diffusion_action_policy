@@ -22,7 +22,7 @@ pretrained_policy_path = Path(snapshot_download("lerobot/diffusion_pusht"))
 # pretrained_policy_path = Path("outputs/train/example_pusht_diffusion")
 
 # load the dict of safe_tensors
-state_dict = safe_load("/Users/msd/Desktop/model.safetensors")
+state_dict = safe_load("/Users/msd/Desktop/model2.safetensors")
 policy = DiffusionPolicy(DiffusionConfig())
 load_state_dict(policy, state_dict)
 
@@ -48,7 +48,7 @@ frames = []
 frames.append(env.render())
 
 
-@TinyJit
+#@TinyJit
 #@Tensor.test()
 def test(numpy_observation) -> Tensor:
     state = Tensor(numpy_observation["agent_pos"], dtype=dtypes.float)

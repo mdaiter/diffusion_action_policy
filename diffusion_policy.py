@@ -122,13 +122,18 @@ class DiffusionPolicy():
         Tensor.no_grad = False
         return action
 
-    def __call__(self, batch: dict[str, Tensor]) -> dict[str, Tensor]:
-        """Run the batch through the model and compute the loss for training or validation."""
+    def normalize_inputs_pre_call(self, batch: dict[str, Tensor]) -> dict[str, Tensor]:
+        """Pre-run the batch through the model and compute the loss for training or validation."""
         batch = self.normalize_inputs(batch)
         if len(self.expected_image_keys) > 0:
             print(f'Called policy with self.expected_image_keys len: {len(self.expected_image_keys)}')
             batch = copy.copy(dict(batch))  # shallow copy so that adding a key doesn't modify the original
             batch["observation.images"] = Tensor.stack(*[batch[k] for k in self.expected_image_keys], dim=-4)
         batch = self.normalize_targets(batch)
-        loss = self.diffusion.compute_loss(batch)
+        return self.diffusion.compute_loss_pre(batch)
+        
+
+    def __call__(self, batch: (Tensor, Tensor, Tensor, Tensor)) -> dict[str, Tensor]:
+        """Run the batch through the model and compute the loss for training or validation."""
+        loss = self.diffusion.compute_loss(*batch)
         return {"loss": loss}

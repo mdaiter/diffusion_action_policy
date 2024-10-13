@@ -5,7 +5,6 @@ from tinygrad import nn
 from tinygrad.nn.optim import Adam
 from tinygrad import dtypes
 import math
-import einops
 import numpy as np
 
 from networks import DiffusionSinusoidalPosEmb, DiffusionConv1dBlock, DiffusionConditionalResidualBlock1d, SpatialSoftmax
@@ -155,7 +154,7 @@ class DiffusionConditionalUnet1d():
             (B, T, input_dim) diffusion model prediction.
         """
         # For 1D convolutions we'll need feature dimension first.
-        x = einops.rearrange(x, "b t d -> b d t").cast(dtype=dtypes.float)
+        x = x.transpose(1, 2).cast(dtype=dtypes.float)
 
         timesteps_embed = timestep.sequential(self.diffusion_step_encoder)
 
@@ -184,7 +183,7 @@ class DiffusionConditionalUnet1d():
 
         x = x.sequential(self.final_conv)
 
-        x = einops.rearrange(x, "b d t -> b t d")
+        x = x.transpose(1, 2)
         return x
 
 import tinygrad.nn as nn
