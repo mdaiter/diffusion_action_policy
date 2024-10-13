@@ -48,7 +48,6 @@ opt = nn.optim.Adam(nn.state.get_parameters(policy), lr=1e-4)
 @Tensor.train()
 def train_step(batch_outputs:(Tensor, Tensor, Tensor, Tensor)) -> Tensor:
     Tensor.training = True
-
     output_dict = policy(batch_outputs)
     loss = output_dict["loss"]
     opt.zero_grad()

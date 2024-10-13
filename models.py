@@ -183,7 +183,7 @@ class DiffusionConditionalUnet1d():
 
         x = x.sequential(self.final_conv)
 
-        x = x.transpose(1, 2)
+        x = x.transpose(2, 1)
         return x
 
 import tinygrad.nn as nn
