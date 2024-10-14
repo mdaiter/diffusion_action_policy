@@ -19,7 +19,7 @@ output_directory.mkdir(parents=True, exist_ok=True)
 
 # Number of offline training steps (we'll only do offline training for this example.)
 # Adjust as you prefer. 5000 steps are needed to get something worth evaluating.
-training_steps = 5000
+training_steps = 40002
 log_freq = 1
 
 # Set up the dataset.
@@ -81,10 +81,17 @@ if __name__ == "__main__":
                 if step % log_freq == 0:
                     print(f"step: {step} loss: {loss.numpy():.3f}")
                 step += 1
+
+                if step % 5000 == 0:
+                    try:
+                        state_dict = get_state_dict(policy)
+                        safe_save(state_dict, f'{output_directory}/model_{step}.safetensors')
+                    except:
+                        print(f'Exception with safe save occured')
                 if step >= training_steps:
                     done = True
                     break
 
     # Save a policy checkpoint.
     state_dict = get_state_dict(policy)
-    safe_save(state_dict, f'{output_directory}/model.safetensors')
+    safe_save(state_dict, f'{output_directory}/model_final.safetensors')
