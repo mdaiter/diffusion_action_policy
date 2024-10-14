@@ -1,6 +1,7 @@
 # Diffusion Action Policy, in Tinygrad
 
 This repository contains the implementation of Diffusion Action Policy, a novel approach for learning robotic control policies using diffusion models.
+Original paper here: https://diffusion-policy.cs.columbia.edu/diffusion_policy_2023.pdf
 ## Overview
 Diffusion Action Policy leverages the power of diffusion models to generate high-quality action sequences for robotic control tasks. Key features include:
 * Stochastic action generation using a diffusion process
