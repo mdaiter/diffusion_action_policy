@@ -228,7 +228,6 @@ class DDPMScheduler():
 
         self.alphas = 1.0 - self.betas
         self.alphas_cumprod = Tensor(np.cumprod(self.alphas, axis=0), requires_grad=False)
-        self.one = Tensor(1.0, requires_grad=False)
 
         # standard deviation of the initial noise distribution
         self.init_noise_sigma = 1.0
@@ -349,7 +348,7 @@ class DDPMScheduler():
         prev_t = self.previous_timestep(t)
 
         alpha_prod_t = self.alphas_cumprod[t]
-        alpha_prod_t_prev = self.alphas_cumprod[prev_t] if prev_t >= 0 else self.one
+        alpha_prod_t_prev = self.alphas_cumprod[prev_t] if prev_t >= 0 else Tensor(1.0, requires_grad=False)
         current_beta_t = 1 - alpha_prod_t / alpha_prod_t_prev
 
         # For t > 0, compute predicted variance βt (see formula (6) and (7) from https://arxiv.org/pdf/2006.11239.pdf)
@@ -458,9 +457,8 @@ class DDPMScheduler():
             predicted_variance = None
 
         # 1. compute alphas, betas
-        print(f'alphas_cumprod {self.alphas_cumprod}')
         alpha_prod_t = self.alphas_cumprod[t]
-        alpha_prod_t_prev = self.alphas_cumprod[prev_t] if prev_t >= 0 else self.one
+        alpha_prod_t_prev = self.alphas_cumprod[prev_t] if prev_t >= 0 else Tensor(1.0, requires_grad=False)
         beta_prod_t = 1.0 - alpha_prod_t
         beta_prod_t_prev = 1.0 - alpha_prod_t_prev
         current_alpha_t = alpha_prod_t / alpha_prod_t_prev

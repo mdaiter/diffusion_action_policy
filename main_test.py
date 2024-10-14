@@ -22,7 +22,7 @@ pretrained_policy_path = Path(snapshot_download("lerobot/diffusion_pusht"))
 # pretrained_policy_path = Path("outputs/train/example_pusht_diffusion")
 
 # load the dict of safe_tensors
-state_dict = safe_load("/Users/msd/Desktop/model2.safetensors")
+state_dict = safe_load("/Users/msd/Desktop/model_final.safetensors")
 policy = DiffusionPolicy(DiffusionConfig())
 load_state_dict(policy, state_dict)
 
@@ -51,6 +51,7 @@ frames.append(env.render())
 #@TinyJit
 #@Tensor.test()
 def test(state:Tensor, image:Tensor) -> Tensor:
+    Tensor.no_grad = True
     # Convert to float32 with image from channel first in [0,255]
     # to channel last in [0,1]
     image = image / 255.0
@@ -68,9 +69,8 @@ def test(state:Tensor, image:Tensor) -> Tensor:
 
     # Predict the next action with respect to the current observation
     prev_tensor_no_grad = Tensor.no_grad
-    Tensor.no_grad = True
     action = policy.select_action(observation)
-    Tensor.no_grad = prev_tensor_no_grad
+    print(f'action selected: {action}')
     
     # Prepare the action for the environment
     return action.squeeze(0)

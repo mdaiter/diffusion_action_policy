@@ -70,7 +70,7 @@ class DiffusionModel():
             # shape
             batch_size, self.config.horizon, self.config.output_shapes["action"][0],
             dtype=dtypes.float
-        )
+        ).realize()
         print(f'sample: {sample}')
         print(f'sample shape: {sample.shape}')
         print(f'self.num_inference_steps: {self.num_inference_steps}')
@@ -88,12 +88,13 @@ class DiffusionModel():
             # sample = Tensor(sample.numpy(), dtype=dtypes.float)
             print(f'sample.shape[:1]: {sample.shape[:1][0]}')
             print(f'sample.t.numpy(): {t.numpy()}')
-            print(f'sample: {sample}')
+            print(f'sample: {sample.numpy()}')
             model_output = self.unet(
                 sample,
                 Tensor.full(shape=sample.shape[:1], fill_value=t.numpy(), dtype=dtypes.long),
                 global_cond=global_cond,
-            ).realize()
+            )
+            print(f'output of model_output: {model_output.numpy()}')
             # Compute previous image: x_t -> x_t-1
             sample = self.noise_scheduler.step(
                 model_output, int(t.numpy()), sample
@@ -151,6 +152,7 @@ class DiffusionModel():
 
         # run sampling
         actions = self.conditional_sample(batch_size, global_cond=global_cond)
+        print(f'output of conditional_sample: {actions.numpy()}')
 
         # Extract `n_action_steps` steps worth of actions (from the current observation).
         start = n_obs_steps - 1
