@@ -109,16 +109,21 @@ class DiffusionModel():
         # Extract image feature (first combine batch, sequence, and camera index dims).
         if self._use_images:
             b, s, n, *rest = batch["observation.images"].shape
-            img_features = batch["observation.images"].reshape(b * s * n, *rest)
+            img_features = batch["observation.images"].reshape((b * s * n, *rest))
             img_features.requires_grad = False
             img_features = self.rgb_encoder(
                 img_features
             )
             # Separate batch dim and sequence dim back out. The camera index dim gets absorbed into the
             # feature dim (effectively concatenating the camera features).
-            orig_shape = img_features.shape
-            n = orig_shape[0] // (batch_size * n_obs_steps)
-            img_features = img_features.view(batch_size, n_obs_steps, n, *orig_shape[1:]).flatten(2).cast(dtype=dtypes.float)
+            total_first_dim, *rest = img_features.shape
+            n = total_first_dim // (batch_size * n_obs_steps)
+            img_features = img_features.reshape((batch_size, n_obs_steps, n, *rest))
+            rest_product = 1
+            for dim in rest:
+                rest_product *= dim
+            final_shape = (batch_size, n_obs_steps, n * rest_product)
+            img_features = img_features.reshape(final_shape)
             global_cond_feats.append(img_features)
 
         if self._use_env_state:
