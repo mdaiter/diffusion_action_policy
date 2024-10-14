@@ -22,7 +22,7 @@ pretrained_policy_path = Path(snapshot_download("lerobot/diffusion_pusht"))
 # pretrained_policy_path = Path("outputs/train/example_pusht_diffusion")
 
 # load the dict of safe_tensors
-state_dict = safe_load("/Users/msd/Desktop/model.safetensors")
+state_dict = safe_load("/Users/msd/Desktop/model2.safetensors")
 policy = DiffusionPolicy(DiffusionConfig())
 load_state_dict(policy, state_dict)
 
@@ -50,10 +50,7 @@ frames.append(env.render())
 
 #@TinyJit
 #@Tensor.test()
-def test(numpy_observation) -> Tensor:
-    state = Tensor(numpy_observation["agent_pos"], dtype=dtypes.float)
-    image = Tensor(numpy_observation["pixels"], dtype=dtypes.float)
-    
+def test(state:Tensor, image:Tensor) -> Tensor:
     # Convert to float32 with image from channel first in [0,255]
     # to channel last in [0,1]
     image = image / 255.0
@@ -82,10 +79,13 @@ if __name__ == "__main__":
     step = 0
     done = False
     while not done:
-        squeezed_action = test(numpy_observation)
+        state = Tensor(numpy_observation["agent_pos"], dtype=dtypes.float)
+        image = Tensor(numpy_observation["pixels"], dtype=dtypes.float)
+        squeezed_action = test(state, image)
     
         # Prepare the action for the environment
         numpy_action = squeezed_action.numpy()
+        print(f'numpy_action: {numpy_action}')
 
         # Step through the environment and receive a new observation
         numpy_observation, reward, terminated, truncated, info = env.step(numpy_action)

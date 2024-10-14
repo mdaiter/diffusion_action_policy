@@ -1,13 +1,11 @@
 from diffusers.schedulers.scheduling_ddim import DDIMScheduler
-from diffusers.schedulers.scheduling_ddpm import DDPMScheduler
+#from diffusers.schedulers.scheduling_ddpm import DDPMScheduler
+from scheduling_ddpm import DDPMScheduler
 
 # with this, to use diffusers the library, we sadly *really* need to import torch for now.
 # wip, trying to get this out
-from torch import from_numpy
 from tinygrad import Tensor, dtypes, TinyJit
 import tinygrad
-
-import einops
 
 from config import DiffusionConfig
 from models import DiffusionRgbEncoder, DiffusionConditionalUnet1d
@@ -21,6 +19,7 @@ def _make_noise_scheduler(name: str, **kwargs: dict) -> DDPMScheduler | DDIMSche
     to the scheduler.
     """
     if name == "DDPM":
+        print(f'Initializing DDPM with: {kwargs}')
         return DDPMScheduler(**kwargs)
     elif name == "DDIM":
         return DDIMScheduler(**kwargs)
@@ -58,7 +57,7 @@ class DiffusionModel():
         )
 
         if config.num_inference_steps is None:
-            self.num_inference_steps = self.noise_scheduler.config.num_train_timesteps
+            self.num_inference_steps = self.noise_scheduler.num_train_timesteps
         else:
             self.num_inference_steps = config.num_inference_steps
 
@@ -86,7 +85,7 @@ class DiffusionModel():
             # This repo's moreso to prove that Tinygrad can do diffusion on-chip, so
             # I don't mind if some of these are bridged to third party libraries
             # to prove a point.
-            sample = Tensor(sample.numpy(), dtype=dtypes.float)
+            # sample = Tensor(sample.numpy(), dtype=dtypes.float)
             print(f'sample.shape[:1]: {sample.shape[:1][0]}')
             print(f'sample.t.numpy(): {t.numpy()}')
             print(f'sample: {sample}')
@@ -94,13 +93,13 @@ class DiffusionModel():
                 sample,
                 Tensor.full(shape=sample.shape[:1], fill_value=t.numpy(), dtype=dtypes.long),
                 global_cond=global_cond,
-            )
+            ).realize()
             # Compute previous image: x_t -> x_t-1
             sample = self.noise_scheduler.step(
-                from_numpy(model_output.numpy()), t, from_numpy(sample.numpy())
+                model_output, int(t.numpy()), sample
             ).prev_sample
 
-        sample = Tensor(sample.numpy(), dtype=dtypes.float)
+        # sample = Tensor(sample.numpy(), dtype=dtypes.float)
         return sample
 
     def _prepare_global_conditioning(self, batch: dict[str, Tensor]) -> Tensor:
@@ -109,16 +108,17 @@ class DiffusionModel():
         global_cond_feats = [batch["observation.state"]]
         # Extract image feature (first combine batch, sequence, and camera index dims).
         if self._use_images:
-            img_features = einops.rearrange(batch["observation.images"], "b s n ... -> (b s n) ...")
+            b, s, n, *rest = batch["observation.images"].shape
+            img_features = batch["observation.images"].reshape(b * s * n, *rest)
             img_features.requires_grad = False
             img_features = self.rgb_encoder(
                 img_features
             )
             # Separate batch dim and sequence dim back out. The camera index dim gets absorbed into the
             # feature dim (effectively concatenating the camera features).
-            img_features = einops.rearrange(
-                img_features, "(b s n) ... -> b s (n ...)", b=batch_size, s=n_obs_steps
-            ).cast(dtype=dtypes.float)
+            orig_shape = img_features.shape
+            n = orig_shape[0] // (batch_size * n_obs_steps)
+            img_features = img_features.view(batch_size, n_obs_steps, n, *orig_shape[1:]).flatten(2).cast(dtype=dtypes.float)
             global_cond_feats.append(img_features)
 
         if self._use_env_state:
@@ -188,41 +188,30 @@ class DiffusionModel():
         timesteps = Tensor.randint(
             (trajectory.shape[0],),
             low=0,
-            high=self.noise_scheduler.config.num_train_timesteps,
+            high=self.noise_scheduler.num_train_timesteps,
             dtype=dtypes.long
         )
         print(f'timesteps: {timesteps.numpy()}')
         # Add noise to the clean trajectories according to the noise magnitude at each timestep.
         # gotta convert to torch here. noise_scheduler needs it
         noisy_trajectory = self.noise_scheduler.add_noise(
-            from_numpy(trajectory.realize().numpy()), from_numpy(eps.realize().numpy()), from_numpy(timesteps.realize().numpy())
-        ).numpy()
+            trajectory, eps, timesteps
+        ).cast(dtype=dtypes.float)
 
         print(f'noisy_trajectory: {noisy_trajectory.shape}')
 
-        # convert back to tinygrad
-        noisy_trajectory = Tensor(noisy_trajectory, dtype=dtypes.float)
-        
         if self.config.prediction_type == "epsilon":
             target = eps
         elif self.config.prediction_type == "sample":
             target = batch["action"]
         else:
             raise ValueError(f"Unsupported prediction type {self.config.prediction_type}")
-
-
         
         return (noisy_trajectory, timesteps, global_cond, target)
 
     def compute_loss(self, noisy_trajectory:Tensor, timesteps:Tensor, global_cond:Tensor, target:Tensor) -> Tensor:
         # Run the denoising network (that might denoise the trajectory, or attempt to predict the noise).
         pred = self.unet(noisy_trajectory, timesteps, global_cond=global_cond)
-
-        #pred_cpu = pred.numpy()
-        #blue_channel_zero = np.zeros(pred_cpu.shape[:2]).reshape(pred_cpu.shape[0], pred_cpu.shape[1], 1)
-        #pred_cpu = np.concatenate((pred_cpu, blue_channel_zero), axis=-1)
-        #plt.imshow(pred_cpu, interpolation='nearest')
-        #plt.show()
 
         # Compute the loss.
         # The target is either the original trajectory, or the noise.

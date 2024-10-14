@@ -44,10 +44,11 @@ policy = DiffusionPolicy(cfg, dataset_stats=dataset.stats)
 
 opt = nn.optim.Adam(nn.state.get_parameters(policy), lr=1e-4)
 
-#@TinyJit
+@TinyJit
 @Tensor.train()
-def train_step(batch_outputs:(Tensor, Tensor, Tensor, Tensor)) -> Tensor:
+def train_step(batch:(Tensor, Tensor, Tensor, Tensor)) -> Tensor:
     Tensor.training = True
+    batch_outputs = policy.normalize_inputs_pre_call(batch)
     output_dict = policy(batch_outputs)
     loss = output_dict["loss"]
     opt.zero_grad()
@@ -75,9 +76,7 @@ if __name__ == "__main__":
         while not done:
             for batch in dataloader:
                 batch = {k: Tensor(v.numpy(), requires_grad=False) for k, v in batch.items()}
-                batch_outputs = policy.normalize_inputs_pre_call(batch)
-
-                loss = train_step(batch_outputs)
+                loss = train_step(batch)
             
                 if step % log_freq == 0:
                     print(f"step: {step} loss: {loss.numpy():.3f}")
