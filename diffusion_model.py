@@ -70,7 +70,7 @@ class DiffusionModel():
             # shape
             batch_size, self.config.horizon, self.config.output_shapes["action"][0],
             dtype=dtypes.float
-        ).realize()
+        )
         print(f'sample: {sample}')
         print(f'sample shape: {sample.shape}')
         print(f'self.num_inference_steps: {self.num_inference_steps}')
@@ -111,6 +111,9 @@ class DiffusionModel():
         if self._use_images:
             b, s, n, *rest = batch["observation.images"].shape
             img_features = batch["observation.images"].reshape((b * s * n, *rest))
+            # Just to get JIT to work:
+            #img_features = batch["observation.images"].reshape((128, 3, 96, 96))
+            #print(f'img_features train form: {(b * s * n, *rest)}')
             img_features.requires_grad = False
             img_features = self.rgb_encoder(
                 img_features
@@ -125,6 +128,10 @@ class DiffusionModel():
                 rest_product *= dim
             final_shape = (batch_size, n_obs_steps, n * rest_product)
             img_features = img_features.reshape(final_shape)
+
+            # Just to get JIT to work:
+            #img_features = img_features.reshape((64, 2, 64))
+            #print(f'img_features final form: {final_shape}')
             global_cond_feats.append(img_features)
 
         if self._use_env_state:
@@ -161,7 +168,7 @@ class DiffusionModel():
 
         return actions
 
-    def compute_loss_pre(self, batch: dict[str, Tensor]) -> (Tensor, Tensor, Tensor, Tensor):
+    def compute_loss(self, batch: dict[str, Tensor]) -> (Tensor, Tensor, Tensor, Tensor):
         """
         This function expects `batch` to have (at least):
         {
@@ -214,9 +221,6 @@ class DiffusionModel():
         else:
             raise ValueError(f"Unsupported prediction type {self.config.prediction_type}")
         
-        return (noisy_trajectory, timesteps, global_cond, target)
-
-    def compute_loss(self, noisy_trajectory:Tensor, timesteps:Tensor, global_cond:Tensor, target:Tensor) -> Tensor:
         # Run the denoising network (that might denoise the trajectory, or attempt to predict the noise).
         pred = self.unet(noisy_trajectory, timesteps, global_cond=global_cond)
 

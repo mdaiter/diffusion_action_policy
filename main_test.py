@@ -2,6 +2,7 @@ from pathlib import Path
 
 import gym_pusht  # noqa: F401
 import gymnasium as gym
+from gym.wrappers import HumanRendering
 import imageio
 import numpy
 import tinygrad
@@ -22,18 +23,19 @@ pretrained_policy_path = Path(snapshot_download("lerobot/diffusion_pusht"))
 # pretrained_policy_path = Path("outputs/train/example_pusht_diffusion")
 
 # load the dict of safe_tensors
-state_dict = safe_load("/Users/msd/Desktop/model_final.safetensors")
+state_dict = safe_load("/Users/msd/Desktop/model_10000.safetensors")
 policy = DiffusionPolicy(DiffusionConfig())
 load_state_dict(policy, state_dict)
 
 # Initialize evaluation environment to render two observation types:
 # an image of the scene and state/position of the agent. The environment
 # also automatically stops running after 300 interactions/steps.
-env = gym.make(
+env = HumanRendering(gym.make(
     "gym_pusht/PushT-v0",
     obs_type="pixels_agent_pos",
     max_episode_steps=500,
-)
+    render_mode="rgb_array",
+))
 
 # Reset the policy and environmens to prepare for rollout
 policy.reset()
@@ -68,7 +70,6 @@ def test(state:Tensor, image:Tensor) -> Tensor:
     }
 
     # Predict the next action with respect to the current observation
-    prev_tensor_no_grad = Tensor.no_grad
     action = policy.select_action(observation)
     print(f'action selected: {action}')
     

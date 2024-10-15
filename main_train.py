@@ -19,7 +19,7 @@ output_directory.mkdir(parents=True, exist_ok=True)
 
 # Number of offline training steps (we'll only do offline training for this example.)
 # Adjust as you prefer. 5000 steps are needed to get something worth evaluating.
-training_steps = 40002
+training_steps = 40000
 log_freq = 1
 
 # Set up the dataset.
@@ -46,10 +46,9 @@ opt = nn.optim.Adam(nn.state.get_parameters(policy), lr=1e-4)
 
 @TinyJit
 @Tensor.train()
-def train_step(batch:(Tensor, Tensor, Tensor, Tensor)) -> Tensor:
+def train_step(batch) -> Tensor:
     Tensor.training = True
-    batch_outputs = policy.normalize_inputs_pre_call(batch)
-    output_dict = policy(batch_outputs)
+    output_dict = policy(batch)
     loss = output_dict["loss"]
     opt.zero_grad()
     loss.backward()
