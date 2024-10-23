@@ -2,7 +2,6 @@ from pathlib import Path
 
 import gym_pusht  # noqa: F401
 import gymnasium as gym
-from gym.wrappers import HumanRendering
 import imageio
 import numpy
 import tinygrad
@@ -18,24 +17,24 @@ output_directory = Path("outputs/eval/example_pusht_diffusion")
 output_directory.mkdir(parents=True, exist_ok=True)
 
 # Download the diffusion policy for pusht environment
-pretrained_policy_path = Path(snapshot_download("lerobot/diffusion_pusht"))
+# pretrained_policy_path = Path(snapshot_download("lerobot/diffusion_pusht"))
 # OR uncomment the following to evaluate a policy from the local outputs/train folder.
 # pretrained_policy_path = Path("outputs/train/example_pusht_diffusion")
 
 # load the dict of safe_tensors
-state_dict = safe_load("/Users/msd/Desktop/model_10000.safetensors")
+state_dict = safe_load("/Users/msd/Code/experiments/diffusion_actions/outputs/train/example_pusht_diffusion/model_1000.safetensors")
 policy = DiffusionPolicy(DiffusionConfig())
 load_state_dict(policy, state_dict)
 
 # Initialize evaluation environment to render two observation types:
 # an image of the scene and state/position of the agent. The environment
 # also automatically stops running after 300 interactions/steps.
-env = HumanRendering(gym.make(
+env = gym.make(
     "gym_pusht/PushT-v0",
     obs_type="pixels_agent_pos",
     max_episode_steps=500,
     render_mode="rgb_array",
-))
+)
 
 # Reset the policy and environmens to prepare for rollout
 policy.reset()

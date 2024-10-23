@@ -86,15 +86,11 @@ class DiffusionModel():
             # I don't mind if some of these are bridged to third party libraries
             # to prove a point.
             # sample = Tensor(sample.numpy(), dtype=dtypes.float)
-            print(f'sample.shape[:1]: {sample.shape[:1][0]}')
-            print(f'sample.t.numpy(): {t.numpy()}')
-            print(f'sample: {sample.numpy()}')
             model_output = self.unet(
                 sample,
                 Tensor.full(shape=sample.shape[:1], fill_value=t.numpy(), dtype=dtypes.long),
                 global_cond=global_cond,
             )
-            print(f'output of model_output: {model_output.numpy()}')
             # Compute previous image: x_t -> x_t-1
             sample = self.noise_scheduler.step(
                 model_output, int(t.numpy()), sample
@@ -159,7 +155,6 @@ class DiffusionModel():
 
         # run sampling
         actions = self.conditional_sample(batch_size, global_cond=global_cond)
-        print(f'output of conditional_sample: {actions.numpy()}')
 
         # Extract `n_action_steps` steps worth of actions (from the current observation).
         start = n_obs_steps - 1
@@ -198,21 +193,18 @@ class DiffusionModel():
         # Sample noise to add to the trajectory.
         eps = Tensor.randn(trajectory.shape, dtype=dtypes.float).realize()
         # Sample a random noising timestep for each item in the batch.
-        print(f'trajectory.shape[0]: {trajectory.shape[0]}')
         timesteps = Tensor.randint(
             (trajectory.shape[0],),
             low=0,
             high=self.noise_scheduler.num_train_timesteps,
             dtype=dtypes.long
         )
-        print(f'timesteps: {timesteps.numpy()}')
         # Add noise to the clean trajectories according to the noise magnitude at each timestep.
         # gotta convert to torch here. noise_scheduler needs it
         noisy_trajectory = self.noise_scheduler.add_noise(
             trajectory, eps, timesteps
         ).cast(dtype=dtypes.float)
 
-        print(f'noisy_trajectory: {noisy_trajectory.shape}')
 
         if self.config.prediction_type == "epsilon":
             target = eps
