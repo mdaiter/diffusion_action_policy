@@ -49,7 +49,7 @@ frames = []
 frames.append(env.render())
 
 
-#@TinyJit
+@TinyJit
 #@Tensor.test()
 def test(state:Tensor, image:Tensor) -> Tensor:
     Tensor.no_grad = True
@@ -73,7 +73,7 @@ def test(state:Tensor, image:Tensor) -> Tensor:
     print(f'action selected: {action}')
     
     # Prepare the action for the environment
-    return action.squeeze(0)
+    return action.squeeze(0).realize()
 
 if __name__ == "__main__":
     step = 0
